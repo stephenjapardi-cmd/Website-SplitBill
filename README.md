@@ -1,5 +1,3 @@
-# Website-SplitBill
-Web
 <!DOCTYPE html>
 <html lang="id">
 <head>
