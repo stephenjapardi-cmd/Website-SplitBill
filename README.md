@@ -1,1 +1,472 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXOVA - Split Bill Estetik</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8F9F5; }
+        .card-receipt { background-color: #FFFDF8; border: 1px dashed #D1D5DB; }
+        .hidden { display: none !important; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #1F4E3D; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="text-gray-800 antialiased min-h-screen flex flex-col items-center pt-8 pb-20 px-4">
 
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-black/50 z-50 flex flex-col justify-center items-center backdrop-blur-sm">
+        <div class="loader mb-4"></div>
+        <p class="text-white font-medium">Membaca Struk (Bisa memakan waktu 10-15 detik)...</p>
+    </div>
+
+    <header class="w-full max-w-md text-center mb-8">
+        <h1 class="text-3xl font-bold text-[#1F4E3D] tracking-tight">NEXOVA</h1>
+        <p class="text-sm text-gray-500 mt-1">Scan, Split, Selesai.</p>
+    </header>
+
+    <main id="page-home" class="w-full max-w-md space-y-6">
+        <div class="grid grid-cols-2 gap-4 relative">
+            <label class="bg-[#1F4E3D] hover:bg-[#16382c] text-white py-3 px-4 rounded-xl font-medium shadow-sm transition flex justify-center items-center gap-2 cursor-pointer">
+                📸 Scan Bill
+                <input type="file" accept="image/*" class="hidden" onchange="processScan(event)">
+            </label>
+            <button onclick="goToManualInput()" class="bg-white border border-[#1F4E3D] text-[#1F4E3D] hover:bg-gray-50 py-3 px-4 rounded-xl font-medium shadow-sm transition">
+                ✍️ Input Manual
+            </button>
+        </div>
+
+        <div class="mt-8">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-semibold text-gray-700">Riwayat Tagihan</h3>
+                <button onclick="clearAllHistory()" class="text-xs text-red-500 hover:underline">Bersihkan Semua</button>
+            </div>
+            <div id="history-list" class="space-y-2"></div>
+        </div>
+    </main>
+
+    <main id="page-manual" class="w-full max-w-md space-y-6 hidden">
+        <button onclick="goToHome()" class="text-gray-500 hover:text-gray-800 flex items-center gap-1 font-medium text-sm mb-2">
+            ← Kembali
+        </button>
+
+        <div class="card-receipt p-6 rounded-xl shadow-sm relative">
+            <input type="text" id="bill-title" placeholder="NAMA RESTO / ACARA" class="w-full text-center font-semibold text-lg tracking-widest mb-4 bg-transparent border-b border-gray-300 focus:outline-none focus:border-[#1F4E3D] placeholder-gray-300 uppercase">
+            
+            <div id="receipt-items" class="space-y-3 text-sm min-h-[50px]">
+                <p class="text-center text-gray-400 text-xs italic mt-2" id="empty-state">Belum ada item ditambahkan.</p>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-dashed border-gray-300 space-y-2">
+                <div class="flex justify-between text-gray-600 text-sm">
+                    <p>Subtotal</p>
+                    <p id="receipt-subtotal">Rp0</p>
+                </div>
+                <div class="flex justify-between items-center text-gray-600 text-sm">
+                    <div class="flex items-center gap-2">
+                        <p>Pajak/Layanan (%)</p>
+                        <input type="number" id="tax-percent" value="0" min="0" oninput="renderReceipt()" class="w-16 p-1 text-center bg-gray-50 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#1F4E3D]">
+                    </div>
+                    <p id="receipt-tax">Rp0</p>
+                </div>
+                <div class="flex justify-between font-bold text-[#1F4E3D] text-lg pt-2 border-t border-gray-200">
+                    <p>Total Keseluruhan</p>
+                    <p id="receipt-grandtotal">Rp0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+            <h3 class="text-sm font-semibold text-gray-600 mb-3">Tambah Item</h3>
+            <div class="space-y-3">
+                <input type="text" id="input-name" placeholder="Nama Barang (Mis: Nasi Goreng)" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#1F4E3D]">
+                <div class="flex gap-3">
+                    <input type="number" id="input-qty" placeholder="Qty" value="1" min="1" class="w-1/3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#1F4E3D]">
+                    <input type="number" id="input-price" placeholder="Harga Satuan" class="w-2/3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#1F4E3D]">
+                </div>
+                <button onclick="addItem()" class="w-full bg-[#e8f0eb] text-[#1F4E3D] hover:bg-[#d1e2d8] py-2.5 rounded-lg font-medium text-sm transition">
+                    + Tambah Item
+                </button>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button onclick="saveBillOnly()" class="w-1/3 bg-white border border-[#1F4E3D] text-[#1F4E3D] hover:bg-gray-50 py-3 rounded-xl font-medium shadow-sm transition text-sm">
+                Simpan
+            </button>
+            <button onclick="goToSplit()" class="w-2/3 bg-[#1F4E3D] hover:bg-[#16382c] text-white py-3 rounded-xl font-medium shadow-md transition">
+                Mulai Pembagian →
+            </button>
+        </div>
+    </main>
+
+    <main id="page-split" class="w-full max-w-md space-y-6 hidden">
+        <div class="text-center">
+            <h2 class="text-2xl font-bold text-[#1F4E3D]">Siapa pesan apa?</h2>
+            <p class="text-sm text-gray-500">Pilih orang, lalu pilih porsi menu yang dia makan.</p>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Peserta</h3>
+            <div class="flex gap-3 overflow-x-auto pb-2" id="people-list">
+                <button onclick="addPerson()" class="flex flex-col items-center min-w-[60px] gap-1">
+                    <div class="w-12 h-12 rounded-full border-2 border-dashed border-[#1F4E3D] flex items-center justify-center text-[#1F4E3D] hover:bg-green-50 transition">
+                        +
+                    </div>
+                    <span class="text-xs font-medium text-gray-600">Tambah</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="card-receipt p-4 rounded-xl shadow-sm relative">
+            <p class="text-center text-xs font-bold text-orange-500 bg-orange-50 py-2 rounded mb-4" id="split-instruction">
+                Pilih peserta terlebih dahulu!
+            </p>
+            <div id="split-items" class="space-y-4">
+            </div>
+        </div>
+
+        <button onclick="goToSummary()" class="w-full bg-[#1F4E3D] hover:bg-[#16382c] text-white py-3 rounded-xl font-medium shadow-md transition">
+            Lihat Tagihan Masing-Masing
+        </button>
+        <button onclick="backToManual()" class="w-full text-gray-500 hover:text-gray-800 font-medium text-sm">
+            Batal & Kembali
+        </button>
+    </main>
+
+    <main id="page-summary" class="w-full max-w-md space-y-6 hidden">
+        <div class="text-center">
+            <h2 class="text-2xl font-bold text-[#1F4E3D]">Rincian Tagihan</h2>
+            <p class="text-sm text-gray-500" id="summary-tax-info"></p>
+        </div>
+
+        <div id="summary-list" class="space-y-3">
+        </div>
+
+        <button onclick="saveAndFinish()" class="w-full bg-[#1F4E3D] hover:bg-[#16382c] text-white py-3 rounded-xl font-medium shadow-md transition">
+            Selesai & Simpan
+        </button>
+    </main>
+
+    <script>
+        let currentItems = [];
+        let historyData = JSON.parse(localStorage.getItem('nexova_history')) || [];
+        let people = []; 
+        let activePersonId = null;
+        const colors = ['bg-blue-500', 'bg-red-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500'];
+
+        const formatRupiah = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+
+        // --- FITUR BARU: SHARE KE WHATSAPP ---
+        function shareToWhatsApp(id) {
+            const bill = historyData.find(b => b.id === id);
+            if (!bill) return;
+
+            let text = `*${bill.title}* - Rincian Pembagian\n_${bill.date}_\n\n`;
+            const taxMultiplier = 1 + (bill.taxPercent / 100);
+
+            // Hitung per orang
+            (bill.people || []).forEach(p => {
+                let subtotal = 0;
+                let itemsListText = "";
+                
+                (bill.items || []).forEach(i => { 
+                    const assignment = i.assignments?.find(a => a.personId === p.id);
+                    if (assignment) {
+                        const price = (i.price * assignment.portion);
+                        subtotal += price;
+                        itemsListText += `  • ${i.name} (${assignment.portion} porsi)\n`;
+                    } 
+                });
+
+                if (subtotal > 0) {
+                    const totalWithTax = subtotal * taxMultiplier;
+                    text += `*${p.name}: ${formatRupiah(totalWithTax)}*\n${itemsListText}\n`;
+                }
+            });
+
+            text += `*Total Tagihan: ${formatRupiah(bill.total)}*`;
+            text += `\n\nDibuat dengan NEXOVA`;
+
+            const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        }
+
+        async function processScan(event) {
+            if (currentItems.length > 0) {
+                if (!confirm("Peringatan: Scan baru akan MENGHAPUS data yang sedang diedit. Lanjutkan?")) { event.target.value = ''; return; }
+            }
+            const file = event.target.files[0];
+            if (!file) return;
+            resetForm();
+            document.getElementById('page-home').classList.add('hidden');
+            document.getElementById('page-manual').classList.remove('hidden');
+            document.getElementById('loading-overlay').classList.remove('hidden');
+
+            try {
+                const worker = await Tesseract.createWorker('ind');
+                const ret = await worker.recognize(file);
+                const text = ret.data.text;
+                await worker.terminate();
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                let taxNominal = 0;
+                let tempSubtotal = 0;
+
+                lines.forEach(line => {
+                    const lowerLine = line.toLowerCase();
+                    if (lowerLine.includes('pb1') || lowerLine.includes('tax') || lowerLine.includes('pajak')) {
+                        const taxMatch = line.match(/([\d.,]+)$/); 
+                        if (taxMatch) taxNominal = parseFloat(taxMatch[1].replace(/[.,]/g, ''));
+                    }
+                    const match = line.match(/(\d+)\s+(.+?)\s+((?:\d{1,3}[.,])+\d{3}|\d{4,})/);
+                    if (match) {
+                        const qty = parseInt(match[1], 10);
+                        const nameRaw = match[2].replace(/[^a-zA-Z0-9\s()]/g, '').trim(); 
+                        let priceStr = match[3].replace(/[.,]/g, ''); 
+                        const totalPrice = parseFloat(priceStr);
+                        if (qty > 0 && nameRaw.length > 2 && totalPrice >= 1000) {
+                            const unitPrice = totalPrice / qty; 
+                            currentItems.push({ 
+                                id: Date.now() + Math.random(), 
+                                name: nameRaw.substring(0, 30), 
+                                qty: qty, 
+                                price: unitPrice, 
+                                total: totalPrice, 
+                                assignments: [] 
+                            });
+                            tempSubtotal += totalPrice;
+                        }
+                    }
+                });
+                if (taxNominal > 0 && tempSubtotal > 0) {
+                    document.getElementById('tax-percent').value = Math.round((taxNominal / tempSubtotal) * 100);
+                }
+                renderReceipt();
+            } catch(e) { alert("Terjadi kesalahan saat memindai gambar."); } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+                event.target.value = ''; 
+            }
+        }
+
+        function renderReceipt() {
+            const container = document.getElementById('receipt-items');
+            if (!container) return; 
+            container.innerHTML = '';
+            let subtotal = 0;
+            const taxPercent = parseFloat(document.getElementById('tax-percent').value) || 0;
+            if (currentItems.length === 0) container.innerHTML = `<p class="text-center text-gray-400 text-xs italic mt-2">Belum ada item ditambahkan.</p>`;
+            else {
+                currentItems.forEach(item => {
+                    subtotal += item.total;
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center border-b border-dashed border-gray-200 pb-2';
+                    div.innerHTML = `
+                        <div class="flex-1 mr-2">
+                            <input type="text" value="${item.name}" onblur="updateItem(${item.id}, 'name', this.value)" class="w-full font-medium bg-transparent focus:bg-white focus:ring-1 rounded px-1 border-none outline-none">
+                            <div class="flex gap-1 mt-1">
+                                <input type="number" value="${item.qty}" onblur="updateItem(${item.id}, 'qty', this.value)" class="w-12 text-xs border rounded px-1">
+                                <input type="number" value="${item.price}" onblur="updateItem(${item.id}, 'price', this.value)" class="w-24 text-xs border rounded px-1">
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <p class="font-medium text-sm">${formatRupiah(item.total)}</p>
+                            <button onclick="removeItem(${item.id})" class="text-red-400 hover:text-red-600 font-bold text-lg">×</button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            const taxAmount = subtotal * (taxPercent / 100);
+            document.getElementById('receipt-subtotal').innerText = formatRupiah(subtotal);
+            document.getElementById('receipt-tax').innerText = formatRupiah(taxAmount);
+            document.getElementById('receipt-grandtotal').innerText = formatRupiah(subtotal + taxAmount);
+        }
+
+        function addItem() {
+            const name = document.getElementById('input-name').value;
+            const qty = parseInt(document.getElementById('input-qty').value);
+            const price = parseFloat(document.getElementById('input-price').value);
+            if (!name || isNaN(qty) || isNaN(price) || qty <= 0 || price < 0) { alert("Harap isi nama barang, jumlah yang valid, dan harga!"); return; }
+            currentItems.push({ id: Date.now(), name, qty, price, total: qty * price, assignments: [] });
+            renderReceipt();
+        }
+
+        function updateItem(id, field, value) {
+            const item = currentItems.find(i => i.id === id);
+            if (!item) return;
+            if (field === 'name') item.name = value;
+            if (field === 'qty') { item.qty = parseInt(value) || 0; item.total = item.qty * item.price; item.assignments = []; }
+            if (field === 'price') { item.price = parseFloat(value) || 0; item.total = item.qty * item.price; }
+            renderReceipt();
+        }
+
+        function removeItem(id) { currentItems = currentItems.filter(item => item.id !== id); renderReceipt(); }
+        function resetForm() { currentItems = []; people = []; activePersonId = null; document.getElementById('bill-title').value = ''; document.getElementById('tax-percent').value = '0'; renderReceipt(); }
+
+        function goToManualInput() { document.getElementById('page-home').classList.add('hidden'); document.getElementById('page-manual').classList.remove('hidden'); resetForm(); }
+        function goToHome() { document.getElementById('page-manual').classList.add('hidden'); document.getElementById('page-home').classList.remove('hidden'); renderHistory(); }
+
+        function renderHistory() {
+            const container = document.getElementById('history-list');
+            container.innerHTML = '';
+            historyData.forEach(bill => {
+                const div = document.createElement('div');
+                div.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-50 flex justify-between items-center';
+                div.innerHTML = `
+                    <div><p class="font-medium text-sm text-[#1F4E3D]">${bill.title}</p><p class="text-xs text-gray-400 mt-0.5">${bill.date} • ${formatRupiah(bill.total)}</p></div>
+                    <div class="flex flex-col gap-2">
+                        <div class="flex gap-2">
+                            <button onclick="openHistory(${bill.id})" class="text-[#1F4E3D] bg-[#e8f0eb] px-3 py-1 rounded text-xs font-medium hover:bg-[#d1e2d8] transition">Buka</button>
+                            <button onclick="shareToWhatsApp(${bill.id})" class="text-blue-600 bg-blue-50 px-3 py-1 rounded text-xs font-medium hover:bg-blue-100 transition">Share</button>
+                        </div>
+                        <button onclick="deleteHistory(${bill.id})" class="text-red-500 bg-red-50 px-3 py-1 rounded text-xs font-medium hover:bg-red-100 transition">Hapus</button>
+                    </div>`;
+                container.appendChild(div);
+            });
+        }
+
+        function openHistory(id) {
+            const bill = historyData.find(b => b.id === id);
+            if (bill) {
+                currentItems = [...bill.items];
+                people = bill.people || [];
+                document.getElementById('bill-title').value = bill.title;
+                document.getElementById('tax-percent').value = bill.taxPercent || 0;
+                document.getElementById('page-home').classList.add('hidden');
+                document.getElementById('page-manual').classList.remove('hidden');
+                renderReceipt();
+            }
+        }
+
+        function processSave() {
+            if (currentItems.length === 0) { alert("Tagihan masih kosong!"); return; }
+            const taxPercent = parseFloat(document.getElementById('tax-percent').value) || 0;
+            const totalSubtotal = currentItems.reduce((sum, item) => sum + item.total, 0);
+            const total = totalSubtotal + (totalSubtotal * (taxPercent / 100));
+            const newBill = { id: Date.now(), title: document.getElementById('bill-title').value || "Tagihan Tanpa Nama", date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }), total: total, items: currentItems, taxPercent: taxPercent, people: people };
+            historyData.unshift(newBill);
+            localStorage.setItem('nexova_history', JSON.stringify(historyData));
+            alert("Tagihan berhasil disimpan!");
+        }
+
+        function saveBillOnly() { processSave(); goToHome(); }
+        function saveAndFinish() { processSave(); document.getElementById('page-summary').classList.add('hidden'); document.getElementById('page-home').classList.remove('hidden'); renderHistory(); }
+        function clearAllHistory() { historyData = []; localStorage.removeItem('nexova_history'); renderHistory(); }
+        function deleteHistory(id) { historyData = historyData.filter(b => b.id !== id); localStorage.setItem('nexova_history', JSON.stringify(historyData)); renderHistory(); }
+
+        function goToSplit() {
+            if (currentItems.length === 0) { alert("Tagihan kosong!"); return; }
+            document.getElementById('page-manual').classList.add('hidden');
+            document.getElementById('page-split').classList.remove('hidden');
+            renderPeople();
+            renderSplitItems();
+        }
+
+        function addPerson() {
+            const name = prompt("Nama peserta:");
+            if (name) { people.push({ id: Date.now(), name, initial: name[0].toUpperCase(), color: colors[people.length % colors.length] }); renderPeople(); renderSplitItems(); }
+        }
+
+        function selectPerson(id) { activePersonId = id; renderPeople(); renderSplitItems(); }
+        
+        function assignToItem(itemId, portion) {
+            if (!activePersonId) { alert("Pilih orang terlebih dahulu!"); return; }
+            const item = currentItems.find(i => i.id === itemId);
+            const currentAssignments = item.assignments || [];
+            const existing = currentAssignments.find(a => a.personId === activePersonId);
+            if (existing) {
+                item.assignments = currentAssignments.filter(a => a.personId !== activePersonId);
+            } else {
+                const totalUsed = currentAssignments.reduce((sum, a) => sum + a.portion, 0);
+                if (totalUsed + portion > item.qty) {
+                    alert("Tidak bisa menambah porsi, melebihi jumlah pesanan maksimal: " + item.qty);
+                    return;
+                }
+                item.assignments = [...currentAssignments, { personId: activePersonId, portion: portion }];
+            }
+            renderSplitItems();
+        }
+
+        function renderPeople() {
+            const container = document.getElementById('people-list');
+            container.innerHTML = `<button onclick="addPerson()" class="flex flex-col items-center min-w-[60px] gap-1"><div class="w-12 h-12 rounded-full border-2 border-dashed border-[#1F4E3D] flex items-center justify-center text-[#1F4E3D]">+</div><span class="text-xs font-medium text-gray-600">Tambah</span></button>`;
+            people.forEach(p => {
+                const btn = document.createElement('button');
+                btn.onclick = () => selectPerson(p.id);
+                btn.className = `flex flex-col items-center min-w-[60px] gap-1 ${p.id === activePersonId ? 'opacity-100' : 'opacity-50'}`;
+                btn.innerHTML = `<div class="w-12 h-12 rounded-full ${p.color} text-white flex items-center justify-center font-bold">${p.initial}</div><span class="text-xs">${p.name}</span>`;
+                container.appendChild(btn);
+            });
+        }
+
+        function renderSplitItems() {
+            const container = document.getElementById('split-items');
+            container.innerHTML = '';
+            currentItems.forEach(item => {
+                const assignments = item.assignments || [];
+                const div = document.createElement('div');
+                div.className = 'p-3 rounded-lg border bg-white border-gray-200';
+                let assignedForThisPerson = assignments.find(a => a.personId === activePersonId);
+
+                div.innerHTML = `
+                    <div class="mb-2">
+                        <p class="font-bold text-sm text-gray-800">${item.name}</p>
+                        <p class="text-xs text-gray-500">Qty: ${item.qty} | Harga: ${formatRupiah(item.price)}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="assignToItem(${item.id}, 0.5)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 0.5 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">1/2</button>
+                        <button onclick="assignToItem(${item.id}, 1)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 1 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">1</button>
+                        <button onclick="assignToItem(${item.id}, 2)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 2 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">2</button>
+                        <button onclick="assignToItem(${item.id}, 3)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 3 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">3</button>
+                        <button onclick="assignToItem(${item.id}, 4)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 4 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">4</button>
+                        <button onclick="assignToItem(${item.id}, 5)" class="text-xs px-2 py-1 rounded-full ${assignedForThisPerson?.portion === 5 ? 'bg-[#1F4E3D] text-white' : 'bg-gray-100'}">5</button>
+                        </div>
+                    <p class="text-[10px] text-gray-400 mt-2">Terbagi: ${assignments.reduce((sum, a) => sum + a.portion, 0)} / ${item.qty} porsi</p>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function goToSummary() {
+            document.getElementById('page-split').classList.add('hidden');
+            document.getElementById('page-summary').classList.remove('hidden');
+            const container = document.getElementById('summary-list');
+            container.innerHTML = '';
+            const taxPercent = parseFloat(document.getElementById('tax-percent').value) || 0;
+
+            people.forEach(p => {
+                let subtotal = 0;
+                let itemsListHtml = '';
+                
+                currentItems.forEach(i => { 
+                    const assignment = i.assignments?.find(a => a.personId === p.id);
+                    if (assignment) {
+                        const price = (i.price * assignment.portion);
+                        subtotal += price;
+                        itemsListHtml += `<li class="text-[11px] text-gray-500">• ${i.name} (${assignment.portion} porsi)</li>`;
+                    } 
+                });
+
+                const totalWithTax = subtotal + (subtotal * (taxPercent / 100));
+                container.innerHTML += `
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <p class="font-bold text-[#1F4E3D]">${p.name}</p>
+                            <p class="font-bold">${formatRupiah(totalWithTax)}</p>
+                        </div>
+                        <ul class="space-y-0.5">${itemsListHtml || '<li class="text-xs text-gray-400 italic">Tidak ada item</li>'}</ul>
+                    </div>`;
+            });
+        }
+        
+        function backToManual() {
+            document.getElementById('page-split').classList.add('hidden');
+            document.getElementById('page-manual').classList.remove('hidden');
+        }
+
+        renderHistory();
+    </script>
+</body>
+</html>
